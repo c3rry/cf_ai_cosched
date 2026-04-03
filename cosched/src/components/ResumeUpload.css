@@ -1,0 +1,137 @@
+.portal-container {
+  min-height: 100vh;
+  background-color: #1E2129;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #e5e7eb;
+}
+
+.portal-card {
+  width: 100%;
+  max-width: 450px;
+  background-color: #2A2E38;
+  border-radius: 8px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  padding: 2rem;
+  border: 1px solid #374151;
+}
+
+.portal-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.portal-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.025em;
+}
+
+.portal-header p {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  margin-top: 0.5rem;
+}
+
+.drop-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 12rem;
+  border: 2px dashed #4b5563;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-sizing: border-box;
+}
+
+.drop-zone:hover {
+  border-color: #6b7280;
+  background-color: rgba(55, 65, 81, 0.5);
+}
+
+.drop-zone.active {
+  border-color: #F38020;
+  background-color: rgba(243, 128, 32, 0.1);
+}
+
+.drop-zone.has-file {
+  border-color: #22c55e;
+  background-color: rgba(34, 197, 94, 0.1);
+}
+
+.icon-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #9ca3af;
+}
+
+.icon-success {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #4ade80;
+}
+
+.text-primary {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #d1d5db;
+  margin: 0;
+}
+
+.text-secondary {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.text-success {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #4ade80;
+  margin: 0;
+}
+
+.submit-btn {
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  transition: all 0.2s;
+}
+
+.submit-btn:disabled {
+  background-color: #374151;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.submit-btn:not(:disabled) {
+  background-color: #F38020;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(243, 128, 32, 0.3);
+}
+
+.submit-btn:not(:disabled):hover {
+  background-color: #d97017;
+}
