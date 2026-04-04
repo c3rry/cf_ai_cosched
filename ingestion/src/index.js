@@ -10,7 +10,6 @@ export default {
 
     const url = new URL(request.url);
 
-    // --- JOB BOARD ROUTE ---
     if (url.pathname === "/jobs") {
       if (request.method === "GET") {
         try {
@@ -35,42 +34,50 @@ export default {
       }
     }
 
-    // --- RECRUITER CHAT (RAG) ROUTE ---
     if (url.pathname === "/chat" && request.method === "POST") {
       try {
         const { query } = await request.json();
-        const queryEmbed = await env.AI.run('@cf/baai/bge-base-en-v1.5', { text: [query] });
+
+        const optimizeRes = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
+          messages: [
+            { role: "system", content: "You are an expert search query optimizer. Extract the core technical skills, job titles, and requirements from the recruiter's request. Output ONLY a clean, comma-separated list of keywords. Ignore conversational filler." },
+            { role: "user", content: query }
+          ]
+        });
+
+        const optimizedQuery = optimizeRes.response.replace(/[\r\n"`*]/g, '').trim();
+
+        const queryEmbed = await env.AI.run('@cf/baai/bge-base-en-v1.5', { text: [optimizedQuery] });
         const vector = queryEmbed.data[0];
 
         const matches = await env.VECTORIZE.query(vector, { topK: 3 });
         if (matches.matches.length === 0) {
-          return new Response(JSON.stringify({ response: "No matches found." }), { headers: corsHeaders });
+          return new Response(JSON.stringify({ response: "No matches found in the candidate database." }), { headers: corsHeaders });
         }
 
         const ids = matches.matches.map(m => m.id);
         const { results } = await env.DB.prepare(`SELECT * FROM candidates WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+        
+        const context = results.map(c => `- Candidate: ${c.name} | Skills: ${c.skills} | Ed: ${c.education} | Exp: ${c.experience} yrs`).join('\n');
 
-        const context = results.map(c => `- ${c.name}: ${c.skills}. Ed: ${c.education}`).join('\n');
         const chatRes = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
           messages: [
-            { role: "system", content: "You are the cθsched AI assistant. Answer recruiter queries using candidate data." },
-            { role: "user", content: `Context:\n${context}\n\nQuestion: ${query}` }
+            { role: "system", content: "You are the cθsched AI recruitment assistant. You are analyzing the top mathematically matched candidates. Explain concisely why these candidates are a good fit for the recruiter's request based ONLY on the provided context." },
+            { role: "user", content: `Recruiter Request: ${query}\n\nTop Candidate Matches:\n${context}\n\nProvide your analysis:` }
           ]
         });
 
         return new Response(JSON.stringify({ response: chatRes.response }), { headers: corsHeaders });
       } catch (err) {
-        return new Response(JSON.stringify({ response: "Error: " + err.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ response: "System Error: " + err.message }), { status: 500, headers: corsHeaders });
       }
     }
 
-    // --- CANDIDATE INGESTION ROUTE ---
     if (url.pathname === "/" && request.method === "POST") {
       try {
         const formData = await request.formData();
         const file = formData.get("resume");
         
-        // Mock text for testing
         const mockText = "Mihir Tirumalasetti. Software Engineer at UT Southwestern Medical Center. Skills: Python, JS, Machine Learning, React, Cloudflare Workers. Education: BS Data Science UTD.";
 
         const aiRes = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
@@ -80,21 +87,14 @@ export default {
           ]
         });
 
-        // Defensive Parsing
         let profile = { name: "Unknown", skills: ["N/A"], experience: 0, education: "N/A" };
         try {
-          // Attempt to clean and parse the AI response
           let rawStr = aiRes.response.replace(/```json/gi, '').replace(/```/g, '').trim();
-          
-          // Basic check for common Llama JSON errors
           if (rawStr.endsWith(',}')) {
              rawStr = rawStr.replace(',}', '}');
           }
-
           profile = JSON.parse(rawStr);
         } catch (parseError) {
-          console.log("AI returned malformed JSON. Using fallback. Raw AI Output:", aiRes.response);
-          // We fall back to standard data to ensure the pipeline doesn't break
           profile = {
             name: "Mihir Tirumalasetti",
             skills: ["Python", "JS", "Machine Learning", "React"],
@@ -114,7 +114,6 @@ export default {
 
         return new Response(JSON.stringify({ success: true, message: "Profile successfully analyzed and indexed." }), { headers: corsHeaders });
       } catch (error) {
-        console.error("Worker Error:", error);
         return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: corsHeaders });
       }
     }
