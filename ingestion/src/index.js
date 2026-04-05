@@ -22,13 +22,47 @@ export default {
 
       if (request.method === "POST") {
         try {
-          const { title, description, recruiter_id } = await request.json();
+          const { title, description, recruiter_id, questions } = await request.json();
           const jobId = crypto.randomUUID();
-          await env.DB.prepare("INSERT INTO jobs (id, title, description, recruiter_id) VALUES (?, ?, ?, ?)")
-            .bind(jobId, title, description, recruiter_id)
+          
+          const questionsString = questions ? JSON.stringify(questions) : "[]";
+
+          await env.DB.prepare("INSERT INTO jobs (id, title, description, recruiter_id, questions) VALUES (?, ?, ?, ?, ?)")
+            .bind(jobId, title, description, recruiter_id, questionsString)
             .run();
+            
           return new Response(JSON.stringify({ success: true, jobId }), { headers: corsHeaders });
         } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+        }
+      }
+    }
+
+    if (url.pathname === "/applications") {
+      if (request.method === "GET") {
+        const jobId = url.searchParams.get("job_id");
+        try {
+          const { results } = await env.DB.prepare("SELECT * FROM applications WHERE job_id = ? ORDER BY created_at DESC").bind(jobId).all();
+          return new Response(JSON.stringify(results), { headers: corsHeaders });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+        }
+      }
+
+      if (request.method === "POST") {
+        try {
+          const { job_id, applicant_email, applicant_id, answers } = await request.json();
+          const appId = crypto.randomUUID();
+          const answersString = answers ? JSON.stringify(answers) : "{}";
+
+          // The silent catch is removed here! If it fails, it will now tell us why.
+          await env.DB.prepare("INSERT INTO applications (id, job_id, applicant_email, applicant_id, answers) VALUES (?, ?, ?, ?, ?)")
+            .bind(appId, job_id, applicant_email, applicant_id, answersString)
+            .run();
+
+          return new Response(JSON.stringify({ success: true, appId }), { headers: corsHeaders });
+        } catch (err) {
+          // Now returning the exact SQL error to the frontend
           return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
         }
       }
