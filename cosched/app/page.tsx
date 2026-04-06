@@ -3,24 +3,12 @@ import React, { useState, useEffect } from 'react';
 import ResumeUpload from '../src/components/ResumeUpload';
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
-const getMatchScore = (jobId: string, email: string) => {
-  if (!jobId || !email) return 0;
-  let hash = 0;
-  const str = jobId + email;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return 65 + (Math.abs(hash) % 34);
-};
-
 export default function Home() {
   const { user, isLoaded, isSignedIn } = useUser();
   const [jobs, setJobs] = useState([]);
   const [newJob, setNewJob] = useState({ title: '', description: '' });
   
   const [questions, setQuestions] = useState([]);
-  
   const [applyingTo, setApplyingTo] = useState<any>(null);
   const [answers, setAnswers] = useState({});
 
@@ -34,6 +22,10 @@ export default function Home() {
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);
   const [jobApplications, setJobApplications] = useState([]);
 
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [myInterviews, setMyInterviews] = useState([]);
+
   useEffect(() => {
     if (user?.primaryEmailAddress?.emailAddress) {
       const email = user.primaryEmailAddress.emailAddress;
@@ -41,6 +33,7 @@ export default function Home() {
       if (uploadStatus === 'active') {
         setHasUploaded(true);
       }
+      fetchInterviews(email);
     }
   }, [user]);
 
@@ -51,11 +44,8 @@ export default function Home() {
         const rawJobs = Array.isArray(data) ? data : [];
         const parsedJobs = rawJobs.map(job => {
           if (typeof job.questions === 'string') {
-            try {
-              return { ...job, questions: JSON.parse(job.questions) };
-            } catch (e) {
-              return { ...job, questions: [] };
-            }
+            try { return { ...job, questions: JSON.parse(job.questions) }; } 
+            catch (e) { return { ...job, questions: [] }; }
           }
           return job;
         });
@@ -63,6 +53,92 @@ export default function Home() {
       })
       .catch(() => setJobs([]));
   }, []);
+
+  useEffect(() => {
+    if (isSignedIn && user?.id && hasUploaded && jobs.length > 0) {
+      jobs.forEach((job: any) => fetchMatchScore(job.id, user.id));
+    }
+  }, [isSignedIn, user?.id, hasUploaded, jobs]);
+
+  const fetchInterviews = async (email: string) => {
+    try {
+      const res = await fetch(`http://localhost:8787/interviews?email=${email}`);
+      if (res.ok) {
+        setMyInterviews(await res.json());
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const sendInterviewInvite = async (jobId: string, candidateEmail: string) => {
+    try {
+      const res = await fetch(`http://localhost:8787/interviews/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, recruiter_id: user?.id, candidate_email: candidateEmail })
+      });
+      if (res.ok) alert(`Interview invitation sent to ${candidateEmail}!`);
+    } catch (e) { alert("Failed to send invite."); }
+  };
+
+  const scheduleInterview = async (interviewId: string, timeString: string) => {
+    try {
+      // LIVE INTEGRATION: Fetch the real Google Token securely from Clerk
+      const tokenRes = await fetch('/api/getToken');
+      const tokenData = await tokenRes.json();
+      const googleToken = tokenData.token;
+
+      if (!googleToken) {
+        alert("Please ensure you are signed in with Google to sync to Calendar.");
+        return;
+      }
+
+      const res = await fetch(`http://localhost:8787/interviews/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          interview_id: interviewId, 
+          scheduled_time: timeString, 
+          candidate_email: user?.primaryEmailAddress?.emailAddress,
+          google_token: googleToken
+        })
+      });
+      
+      if (res.ok) {
+        alert("Interview Scheduled! An email invite has been sent and synced to your Google Calendar.");
+        if (user?.primaryEmailAddress?.emailAddress) fetchInterviews(user.primaryEmailAddress.emailAddress);
+      } else {
+        alert("Failed to sync with Google Calendar.");
+      }
+    } catch (e) { alert("Scheduling failed."); }
+  };
+
+  const fetchMatchScore = async (jobId: string, candidateId: string) => {
+    const scoreKey = `${jobId}-${candidateId}`;
+    if (scores[scoreKey] !== undefined) return;
+    try {
+      const res = await fetch(`http://localhost:8787/match?job_id=${jobId}&candidate_id=${candidateId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setScores(prev => ({ ...prev, [scoreKey]: data.score }));
+      }
+    } catch (e) { console.error("Score fetch failed"); }
+  };
+
+  const fetchSummary = async (candidateId: string) => {
+    if (summaries[candidateId]) return;
+    setSummaries(prev => ({ ...prev, [candidateId]: 'Synthesizing candidate profile...' }));
+    try {
+      const res = await fetch(`http://localhost:8787/summary?candidate_id=${candidateId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSummaries(prev => ({ ...prev, [candidateId]: data.summary }));
+      } else {
+        setSummaries(prev => ({ ...prev, [candidateId]: 'Failed to generate summary.' }));
+      }
+    } catch (e) {
+      setSummaries(prev => ({ ...prev, [candidateId]: 'Failed to generate summary.' }));
+    }
+  };
 
   const confirmUpload = () => {
     if (user?.primaryEmailAddress?.emailAddress) {
@@ -79,11 +155,9 @@ export default function Home() {
   const updateQuestion = (index: number, field: string, value: any) => {
     const updated = [...questions] as any[];
     updated[index][field] = value;
-    
     if (field === 'type' && (value === 'multiple choice' || value === 'multiselect') && !Array.isArray(updated[index].options)) {
       updated[index].options = ['', ''];
     }
-    
     setQuestions(updated as never[]);
   };
 
@@ -114,7 +188,6 @@ export default function Home() {
 
   const postJob = async () => {
     if (!newJob.title || !newJob.description) return alert("Please fill all fields");
-    
     const formattedQuestions = questions.map((q: any) => ({
       ...q,
       options: (q.type === 'multiple choice' || q.type === 'multiselect') 
@@ -147,9 +220,7 @@ export default function Home() {
         });
         setJobs(Array.isArray(parsedJobs) ? parsedJobs : []);
       }
-    } catch (err) {
-      alert("Worker connection failed.");
-    }
+    } catch (err) { alert("Worker connection failed."); }
   };
 
   const handleApplyClick = (job: any) => {
@@ -184,20 +255,15 @@ export default function Home() {
         }),
         headers: { 'Content-Type': 'application/json' }
       });
-      
       const data = await res.json();
-      
       if (!res.ok) {
         alert("Database Error: " + data.error);
         return;
       }
-      
       alert("Application submitted successfully!");
       setApplyingTo(null);
       setAnswers({});
-    } catch (err) {
-      alert("Failed to submit application.");
-    }
+    } catch (err) { alert("Failed to submit application."); }
   };
 
   const fetchApplicationsForJob = async (jobId: string) => {
@@ -207,11 +273,11 @@ export default function Home() {
       const res = await fetch(`http://localhost:8787/applications?job_id=${jobId}`);
       if (res.ok) {
         const data = await res.json();
-        setJobApplications(Array.isArray(data) ? data : []);
+        const apps = Array.isArray(data) ? data : [];
+        setJobApplications(apps);
+        apps.forEach((app: any) => fetchMatchScore(jobId, app.applicant_id));
       }
-    } catch (err) {
-      alert("Failed to fetch applications.");
-    }
+    } catch (err) { alert("Failed to fetch applications."); }
   };
 
   const askChatbot = async () => {
@@ -226,9 +292,7 @@ export default function Home() {
       });
       const data = await response.json();
       setAnswer(data.response || "No response generated.");
-    } catch (err) {
-      setAnswer("Could not reach cθsched AI.");
-    }
+    } catch (err) { setAnswer("Could not reach cθsched AI."); }
     setLoading(false);
   };
 
@@ -237,6 +301,20 @@ export default function Home() {
   const optionColors = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899'];
   const myJobs = jobs.filter((j: any) => j.recruiter_id === user?.id);
   const viewingJob = jobs.find((j: any) => j.id === viewingJobId);
+
+  // Expanded dynamic mock slots to ensure accurate local timezone formatting
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextDay = new Date(today);
+  nextDay.setDate(nextDay.getDate() + 2);
+
+  const mockAvailableSlots = [
+    new Date(tomorrow.setHours(10, 0, 0, 0)).toISOString(),
+    new Date(tomorrow.setHours(14, 30, 0, 0)).toISOString(),
+    new Date(nextDay.setHours(9, 0, 0, 0)).toISOString(),
+    new Date(nextDay.setHours(13, 0, 0, 0)).toISOString()
+  ];
 
   return (
     <main style={{ backgroundColor: '#1E2129', minHeight: '100vh', color: 'white', fontFamily: 'sans-serif' }}>
@@ -281,6 +359,42 @@ export default function Home() {
             {activeTab === 'jobs' && (
               <div style={{ maxWidth: '900px', margin: '0 auto' }}>
                 
+                {myInterviews.length > 0 && !applyingTo && (
+                  <div style={{ marginBottom: '4rem' }}>
+                    <h2 style={{ fontSize: '2rem', marginBottom: '1.5rem', color: '#10b981' }}>My Interviews</h2>
+                    {myInterviews.map((invite: any) => (
+                      <div key={invite.id} style={{ backgroundColor: '#2A2E38', border: '1px solid #10b981', padding: '2rem', borderRadius: '16px', marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h3 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{invite.job_title}</h3>
+                            <p style={{ margin: 0, color: '#9ca3af' }}>Status: <span style={{ color: invite.status === 'pending' ? '#F38020' : '#10b981', fontWeight: 'bold' }}>{invite.status.toUpperCase()}</span></p>
+                          </div>
+                          
+                          {invite.status === 'pending' && (
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{ margin: '0 0 0.5rem 0', color: '#d1d5db', fontSize: '0.9rem' }}>Select a time from Recruiter's Google Calendar:</p>
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                {mockAvailableSlots.map(slot => (
+                                  <button key={slot} onClick={() => scheduleInterview(invite.id, slot)} style={{ padding: '0.5rem 1rem', backgroundColor: '#1E2129', color: '#10b981', border: '1px solid #10b981', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}>
+                                    {new Date(slot).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {invite.status === 'scheduled' && (
+                            <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px dashed #10b981' }}>
+                              <p style={{ margin: 0, color: '#10b981', fontWeight: 'bold' }}>📅 {new Date(invite.scheduled_time).toLocaleString()}</p>
+                              <p style={{ margin: '0.5rem 0 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>Google Calendar Invite Sent.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {applyingTo ? (
                   <div style={{ padding: '3rem', backgroundColor: '#2A2E38', borderRadius: '16px', border: '1px solid #374151' }}>
                     <button onClick={() => setApplyingTo(null)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -402,7 +516,9 @@ export default function Home() {
                             {hasUploaded && (
                               <div style={{ display: 'flex', gap: '0.8rem' }}>
                                 <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>AI Matched</span>
-                                <span style={{ backgroundColor: 'rgba(243, 128, 32, 0.1)', color: '#F38020', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>{getMatchScore(job.id, user?.primaryEmailAddress?.emailAddress || '')}% Score</span>
+                                <span style={{ backgroundColor: 'rgba(243, 128, 32, 0.1)', color: '#F38020', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                  {scores[`${job.id}-${user?.id}`] !== undefined ? `${scores[`${job.id}-${user?.id}`]}% Score` : 'Analyzing...'}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -445,7 +561,7 @@ export default function Home() {
                   )}
                   
                   <div style={{ backgroundColor: '#1E2129', borderRadius: '12px', padding: '1.5rem', border: '1px dashed #4b5563', marginBottom: '2rem' }}>
-                    <ResumeUpload />
+                    <ResumeUpload candidateId={user?.id} />
                   </div>
 
                   <button onClick={confirmUpload} style={{ width: '100%', padding: '1.2rem', backgroundColor: '#F38020', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer' }}>
@@ -608,11 +724,57 @@ export default function Home() {
 
                             return (
                               <div key={app.id || idx} style={{ backgroundColor: '#1E2129', padding: '2rem', borderRadius: '12px', border: '1px solid #4b5563' }}>
-                                <div style={{ borderBottom: '1px solid #374151', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <h4 style={{ margin: 0, color: '#10b981', fontSize: '1.2rem' }}>Candidate: {app.applicant_email}</h4>
-                                  <span style={{ backgroundColor: 'rgba(243, 128, 32, 0.1)', color: '#F38020', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                                    {getMatchScore(viewingJob?.id, app.applicant_email)}% AI Match
-                                  </span>
+                                <div style={{ borderBottom: '1px solid #374151', paddingBottom: '1.5rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div>
+                                    <h4 style={{ margin: '0 0 0.5rem 0', color: '#10b981', fontSize: '1.5rem' }}>{app.name || 'Candidate'}</h4>
+                                    <p style={{ margin: 0, color: '#9ca3af' }}>{app.applicant_email}</p>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    <span style={{ backgroundColor: 'rgba(243, 128, 32, 0.1)', color: '#F38020', padding: '0.5rem 1rem', borderRadius: '20px', fontSize: '1rem', fontWeight: 'bold' }}>
+                                      {scores[`${viewingJob?.id}-${app.applicant_id}`] !== undefined ? `${scores[`${viewingJob?.id}-${app.applicant_id}`]}% AI Match` : 'Calculating...'}
+                                    </span>
+                                    <button onClick={() => sendInterviewInvite(viewingJobId, app.applicant_email)} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', padding: '0.6rem 1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                                      Invite to Interview
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+                                  <div>
+                                    <p style={{ color: '#9ca3af', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem' }}>Education</p>
+                                    <p style={{ color: 'white', margin: 0 }}>{app.university || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <p style={{ color: '#9ca3af', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem' }}>Experience</p>
+                                    <p style={{ color: 'white', margin: 0 }}>{app.positions || 'N/A'}</p>
+                                  </div>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <p style={{ color: '#9ca3af', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem' }}>Top Skills</p>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                      {(app.skills || 'N/A').split(',').map((skill: string, i: number) => (
+                                        <span key={i} style={{ backgroundColor: '#2A2E38', padding: '0.3rem 0.8rem', borderRadius: '6px', fontSize: '0.85rem', color: '#d1d5db', border: '1px solid #4b5563' }}>{skill.trim()}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                    <h5 style={{ margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem' }}>
+                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                      AI Candidate Synthesis
+                                    </h5>
+                                    {!summaries[app.applicant_id] && (
+                                      <button onClick={() => fetchSummary(app.applicant_id)} style={{ padding: '0.5rem 1rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                                        Generate Summary
+                                      </button>
+                                    )}
+                                  </div>
+                                  {summaries[app.applicant_id] ? (
+                                    <p style={{ color: '#d1d5db', margin: 0, lineHeight: '1.6', fontSize: '0.95rem' }}>{summaries[app.applicant_id]}</p>
+                                  ) : (
+                                    <p style={{ color: '#6b7280', margin: 0, fontStyle: 'italic', fontSize: '0.9rem' }}>Click generate to analyze this candidate's background against your needs...</p>
+                                  )}
                                 </div>
                                 
                                 {viewingJob?.questions && viewingJob.questions.length > 0 ? (
