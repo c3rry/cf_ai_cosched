@@ -1,4 +1,4 @@
-cθsched (cf_ai_cosched)
+# cθsched 
 
 Technical recruitment at the edge. cθsched is an AI-powered Applicant Tracking System (ATS) built entirely on Cloudflare's Edge infrastructure and Next.js. It leverages vector embeddings, large language models, and automated scheduling to mathematically match candidates to roles and streamline the hiring pipeline.
 
@@ -6,16 +6,16 @@ Live Demo: https://cf-ai-cosched-pm4s.vercel.app/
 
 --------------------------------------------------
 
-SYSTEM ARCHITECTURE & TECHNOLOGIES
+## SYSTEM ARCHITECTURE & TECHNOLOGIES
 
 The platform is divided into a serverless edge backend and a React-based frontend, communicating via REST APIs.
 
-Frontend
+### Frontend
 - Framework: Next.js (App Router) / React
 - Authentication: Clerk (OAuth integration, specifically Google for Calendar scopes)
 - Hosting: Vercel
 
-Edge Backend
+### Edge Backend
 - Compute: Cloudflare Workers (Handling all API routing and business logic)
 - Database: Cloudflare D1 (Serverless SQLite for relational data)
 - Vector Database: Cloudflare Vectorize (For high-dimensional semantic search)
@@ -26,11 +26,11 @@ Edge Backend
 
 --------------------------------------------------
 
-CORE PIPELINES & DATA FLOW
+## CORE PIPELINES & DATA FLOW
 
 cθsched relies on several asynchronous pipelines to process data from the moment a candidate uploads a resume to the moment they are scheduled for an interview.
 
-1. Resume Ingestion & Vectorization Pipeline
+### 1. Resume Ingestion & Vectorization Pipeline
 When a candidate uploads a resume, the system transforms unstructured text into searchable mathematical vectors and relational data.
 - The frontend securely passes the raw text and the user's Clerk ID to the Cloudflare Worker.
 - Data Extraction: The worker prompts llama-3-8b-instruct with a strict system prompt to parse the unstructured text and return a strictly formatted JSON object containing the candidate's Name, University, Skills, and Experience.
@@ -38,21 +38,21 @@ When a candidate uploads a resume, the system transforms unstructured text into 
 - Vector Generation: The worker sends the raw resume text to bge-base-en-v1.5 to generate a 768-dimensional floating-point vector.
 - Index Upsertion: The vector is upserted into Cloudflare Vectorize using the Clerk ID as the vector identifier, alongside metadata for quick filtering.
 
-2. AI Match Scoring Engine
+### 2. AI Match Scoring Engine
 Rather than relying on keyword matching, jobs and candidates are matched semantically based on the distance between their vectors.
 - When a candidate views the Job Board, the frontend requests match scores for each active job.
 - The worker retrieves the job description from D1 and passes it through bge-base-en-v1.5 to generate a job vector.
 - The worker queries Vectorize to calculate the Cosine Similarity between the job vector and the specific candidate's vector.
 - The raw similarity score is mathematically curved on the backend to output a standard ATS percentage (e.g., 0-99%), allowing candidates and recruiters to instantly see contextual alignment.
 
-3. Semantic Talent Search (RAG Pipeline)
+### 3. Semantic Talent Search (RAG Pipeline)
 Recruiters can query their candidate pool using natural language (e.g., "Find me a frontend engineer with React experience from UTD").
 - Intent Parsing: llama-3-8b-instruct parses the recruiter's natural language query to extract core technical requirements and keywords.
 - Semantic Search: The extracted keywords are embedded via bge-base-en-v1.5 and queried against the Vectorize index to find the top K closest candidate vectors.
 - Context Retrieval: The worker takes the IDs of the top vectors and runs a SQL query against D1 to retrieve the full relational profiles of those specific candidates.
 - Synthesis: The retrieved profiles and the original query are fed back into llama-3-8b-instruct as context. The model generates a synthesized, conversational response evaluating the best matches for the recruiter's query.
 
-4. Automated Interview & Calendar Sync Pipeline
+### 4. Automated Interview & Calendar Sync Pipeline
 The platform integrates directly with Google OAuth to handle real-world scheduling without leaving the dashboard.
 - The recruiter clicks "Invite to Interview," which updates the D1 "interviews" table status to "pending".
 - The candidate logs in and selects an available time slot from the UI.
@@ -63,7 +63,7 @@ The platform integrates directly with Google OAuth to handle real-world scheduli
 
 --------------------------------------------------
 
-DATABASE SCHEMA (Cloudflare D1)
+## DATABASE SCHEMA (Cloudflare D1)
 
 The relational state is maintained across four primary tables:
 
@@ -76,7 +76,7 @@ When recruiters view applications, the backend utilizes a LEFT JOIN between "app
 
 --------------------------------------------------
 
-BRIEF LOCAL SETUP
+## BRIEF LOCAL SETUP
 
 If you wish to run the architecture locally:
 
