@@ -3,13 +3,11 @@ import React, { useState, useEffect } from 'react';
 import ResumeUpload from '../src/components/ResumeUpload';
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
-// Ensure you replace YOUR_WORKER_URL if you ever rename your worker!
 const WORKER_URL = "https://ingestion.focus-group.workers.dev";
 
 export default function Home() {
   const { user, isLoaded, isSignedIn } = useUser();
   
-  // FIXED: Added <any[]> so TypeScript knows these aren't never[] arrays
   const [jobs, setJobs] = useState<any[]>([]);
   const [newJob, setNewJob] = useState({ title: '', description: '' });
   
@@ -206,8 +204,9 @@ export default function Home() {
     if (!newJob.title || !newJob.description) return alert("Please fill all fields");
     const formattedQuestions = questions.map((q: any) => ({
       ...q,
+      // FIXED: Added (opt: string) typing here!
       options: (q.type === 'multiple choice' || q.type === 'multiselect') 
-        ? (Array.isArray(q.options) ? q.options.filter(opt => opt.trim() !== '') : [])
+        ? (Array.isArray(q.options) ? q.options.filter((opt: string) => opt.trim() !== '') : [])
         : []
     }));
 
