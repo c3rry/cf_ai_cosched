@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import ResumeUpload from '../src/components/ResumeUpload';
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
+// Ensure you replace YOUR_WORKER_URL if you ever rename your worker!
+const WORKER_URL = "https://ingestion.focus-group.workers.dev";
+
 export default function Home() {
   const { user, isLoaded, isSignedIn } = useUser();
   const [jobs, setJobs] = useState([]);
@@ -38,7 +41,7 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    fetch('http://localhost:8787/jobs')
+    fetch(`${WORKER_URL}/jobs`)
       .then(res => res.ok ? res.json() : [])
       .then(data => {
         const rawJobs = Array.isArray(data) ? data : [];
@@ -62,7 +65,7 @@ export default function Home() {
 
   const fetchInterviews = async (email: string) => {
     try {
-      const res = await fetch(`http://localhost:8787/interviews?email=${email}`);
+      const res = await fetch(`${WORKER_URL}/interviews?email=${email}`);
       if (res.ok) {
         setMyInterviews(await res.json());
       }
@@ -71,7 +74,7 @@ export default function Home() {
 
   const sendInterviewInvite = async (jobId: string, candidateEmail: string) => {
     try {
-      const res = await fetch(`http://localhost:8787/interviews/invite`, {
+      const res = await fetch(`${WORKER_URL}/interviews/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job_id: jobId, recruiter_id: user?.id, candidate_email: candidateEmail })
@@ -80,19 +83,23 @@ export default function Home() {
     } catch (e) { alert("Failed to send invite."); }
   };
 
+  // BULLETPROOF SCHEDULING LOGIC
   const scheduleInterview = async (interviewId: string, timeString: string) => {
     try {
-      // LIVE INTEGRATION: Fetch the real Google Token securely from Clerk
-      const tokenRes = await fetch('/api/getToken');
-      const tokenData = await tokenRes.json();
-      const googleToken = tokenData.token;
-
-      if (!googleToken) {
-        alert("Please ensure you are signed in with Google to sync to Calendar.");
-        return;
+      let googleToken = "";
+      
+      // We safely try to get the token. If this fails, it won't crash the whole app.
+      try {
+        const tokenRes = await fetch('/api/getToken');
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          googleToken = tokenData.token || "";
+        }
+      } catch (err) {
+        console.warn("Could not fetch Google Token from Clerk. Continuing without Calendar Sync.");
       }
 
-      const res = await fetch(`http://localhost:8787/interviews/schedule`, {
+      const res = await fetch(`${WORKER_URL}/interviews/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -104,19 +111,28 @@ export default function Home() {
       });
       
       if (res.ok) {
-        alert("Interview Scheduled! An email invite has been sent and synced to your Google Calendar.");
+        const data = await res.json();
+        if (data.calendarStatus === "Success") {
+            alert("Interview Scheduled! An email invite has been sent and synced to your Google Calendar.");
+        } else {
+            alert("Interview Scheduled in Dashboard! (Note: Google Calendar Sync skipped due to missing OAuth token).");
+        }
         if (user?.primaryEmailAddress?.emailAddress) fetchInterviews(user.primaryEmailAddress.emailAddress);
       } else {
-        alert("Failed to sync with Google Calendar.");
+        const errData = await res.json();
+        alert(`Failed to schedule in database: ${errData.error || 'Unknown Error'}`);
       }
-    } catch (e) { alert("Scheduling failed."); }
+    } catch (e) { 
+      console.error(e);
+      alert(`Scheduling failed entirely: Please check your console.`); 
+    }
   };
 
   const fetchMatchScore = async (jobId: string, candidateId: string) => {
     const scoreKey = `${jobId}-${candidateId}`;
     if (scores[scoreKey] !== undefined) return;
     try {
-      const res = await fetch(`http://localhost:8787/match?job_id=${jobId}&candidate_id=${candidateId}`);
+      const res = await fetch(`${WORKER_URL}/match?job_id=${jobId}&candidate_id=${candidateId}`);
       if (res.ok) {
         const data = await res.json();
         setScores(prev => ({ ...prev, [scoreKey]: data.score }));
@@ -128,7 +144,7 @@ export default function Home() {
     if (summaries[candidateId]) return;
     setSummaries(prev => ({ ...prev, [candidateId]: 'Synthesizing candidate profile...' }));
     try {
-      const res = await fetch(`http://localhost:8787/summary?candidate_id=${candidateId}`);
+      const res = await fetch(`${WORKER_URL}/summary?candidate_id=${candidateId}`);
       if (res.ok) {
         const data = await res.json();
         setSummaries(prev => ({ ...prev, [candidateId]: data.summary }));
@@ -196,7 +212,7 @@ export default function Home() {
     }));
 
     try {
-      await fetch('http://localhost:8787/jobs', {
+      await fetch(`${WORKER_URL}/jobs`, {
         method: 'POST',
         body: JSON.stringify({ 
           ...newJob, 
@@ -208,7 +224,7 @@ export default function Home() {
       alert("Job & Application Published to cθsched!");
       setNewJob({ title: '', description: '' });
       setQuestions([]);
-      const res = await fetch('http://localhost:8787/jobs');
+      const res = await fetch(`${WORKER_URL}/jobs`);
       if (res.ok) {
         const data = await res.json();
         const parsedJobs = data.map((job: any) => {
@@ -245,7 +261,7 @@ export default function Home() {
 
   const submitApplication = async () => {
     try {
-      const res = await fetch('http://localhost:8787/applications', {
+      const res = await fetch(`${WORKER_URL}/applications`, {
         method: 'POST',
         body: JSON.stringify({
           job_id: applyingTo.id,
@@ -270,7 +286,7 @@ export default function Home() {
     setViewingJobId(jobId);
     setJobApplications([]);
     try {
-      const res = await fetch(`http://localhost:8787/applications?job_id=${jobId}`);
+      const res = await fetch(`${WORKER_URL}/applications?job_id=${jobId}`);
       if (res.ok) {
         const data = await res.json();
         const apps = Array.isArray(data) ? data : [];
@@ -285,7 +301,7 @@ export default function Home() {
     setLoading(true);
     setAnswer(''); 
     try {
-      const response = await fetch('http://localhost:8787/chat', {
+      const response = await fetch(`${WORKER_URL}/chat`, {
         method: 'POST',
         body: JSON.stringify({ query }),
         headers: { 'Content-Type': 'application/json' }
@@ -302,7 +318,6 @@ export default function Home() {
   const myJobs = jobs.filter((j: any) => j.recruiter_id === user?.id);
   const viewingJob = jobs.find((j: any) => j.id === viewingJobId);
 
-  // Expanded dynamic mock slots to ensure accurate local timezone formatting
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -386,7 +401,7 @@ export default function Home() {
                           {invite.status === 'scheduled' && (
                             <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px dashed #10b981' }}>
                               <p style={{ margin: 0, color: '#10b981', fontWeight: 'bold' }}>📅 {new Date(invite.scheduled_time).toLocaleString()}</p>
-                              <p style={{ margin: '0.5rem 0 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>Google Calendar Invite Sent.</p>
+                              <p style={{ margin: '0.5rem 0 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>Successfully Scheduled.</p>
                             </div>
                           )}
                         </div>
