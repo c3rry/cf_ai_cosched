@@ -8,10 +8,12 @@ const WORKER_URL = "https://ingestion.focus-group.workers.dev";
 
 export default function Home() {
   const { user, isLoaded, isSignedIn } = useUser();
-  const [jobs, setJobs] = useState([]);
+  
+  // FIXED: Added <any[]> so TypeScript knows these aren't never[] arrays
+  const [jobs, setJobs] = useState<any[]>([]);
   const [newJob, setNewJob] = useState({ title: '', description: '' });
   
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState<any[]>([]);
   const [applyingTo, setApplyingTo] = useState<any>(null);
   const [answers, setAnswers] = useState({});
 
@@ -23,11 +25,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);
-  const [jobApplications, setJobApplications] = useState([]);
+  const [jobApplications, setJobApplications] = useState<any[]>([]);
 
   const [scores, setScores] = useState<Record<string, number>>({});
   const [summaries, setSummaries] = useState<Record<string, string>>({});
-  const [myInterviews, setMyInterviews] = useState([]);
+  const [myInterviews, setMyInterviews] = useState<any[]>([]);
 
   useEffect(() => {
     if (user?.primaryEmailAddress?.emailAddress) {
@@ -83,12 +85,10 @@ export default function Home() {
     } catch (e) { alert("Failed to send invite."); }
   };
 
-  // BULLETPROOF SCHEDULING LOGIC
   const scheduleInterview = async (interviewId: string, timeString: string) => {
     try {
       let googleToken = "";
       
-      // We safely try to get the token. If this fails, it won't crash the whole app.
       try {
         const tokenRes = await fetch('/api/getToken');
         if (tokenRes.ok) {
@@ -165,7 +165,7 @@ export default function Home() {
   };
 
   const addQuestion = () => {
-    setQuestions([...questions, { type: 'free response', text: '', options: ['', ''] } as never]);
+    setQuestions([...questions, { type: 'free response', text: '', options: ['', ''] }]);
   };
 
   const updateQuestion = (index: number, field: string, value: any) => {
@@ -174,7 +174,7 @@ export default function Home() {
     if (field === 'type' && (value === 'multiple choice' || value === 'multiselect') && !Array.isArray(updated[index].options)) {
       updated[index].options = ['', ''];
     }
-    setQuestions(updated as never[]);
+    setQuestions(updated);
   };
 
   const removeQuestion = (index: number) => {
@@ -186,20 +186,20 @@ export default function Home() {
     const updated = [...questions] as any[];
     if (!Array.isArray(updated[qIndex].options)) updated[qIndex].options = ['', ''];
     updated[qIndex].options[oIndex] = value;
-    setQuestions(updated as never[]);
+    setQuestions(updated);
   };
 
   const addOptionToQuestion = (qIndex: number) => {
     const updated = [...questions] as any[];
     if (!Array.isArray(updated[qIndex].options)) updated[qIndex].options = [];
     updated[qIndex].options.push('');
-    setQuestions(updated as never[]);
+    setQuestions(updated);
   };
 
   const removeOptionFromQuestion = (qIndex: number, oIndex: number) => {
     const updated = [...questions] as any[];
     updated[qIndex].options = updated[qIndex].options.filter((_: any, i: number) => i !== oIndex);
-    setQuestions(updated as never[]);
+    setQuestions(updated);
   };
 
   const postJob = async () => {
