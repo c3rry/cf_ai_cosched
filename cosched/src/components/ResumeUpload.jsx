@@ -12,13 +12,11 @@ export default function ResumeUpload({ candidateId }) {
     const formData = new FormData();
     formData.append("resume", file);
     
-    // CRITICAL: Send the Clerk ID to the backend so it links to you
     if (candidateId) {
       formData.append("candidate_id", candidateId);
     }
 
     try {
-      // POINTED TO YOUR LIVE CLOUDFLARE WORKER
       const res = await fetch("https://ingestion.focus-group.workers.dev/", {
         method: "POST",
         body: formData,
