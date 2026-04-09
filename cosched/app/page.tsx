@@ -204,7 +204,6 @@ export default function Home() {
     if (!newJob.title || !newJob.description) return alert("Please fill all fields");
     const formattedQuestions = questions.map((q: any) => ({
       ...q,
-      // FIXED: Added (opt: string) typing here!
       options: (q.type === 'multiple choice' || q.type === 'multiselect') 
         ? (Array.isArray(q.options) ? q.options.filter((opt: string) => opt.trim() !== '') : [])
         : []
@@ -355,7 +354,8 @@ export default function Home() {
                 </button>
               </div>
               <button onClick={() => { setActiveTab('recruiter'); setApplyingTo(null); setViewingJobId(null); }} style={{ background: 'none', border: 'none', color: activeTab === 'recruiter' ? '#10b981' : '#9ca3af', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>Recruiter Dashboard</button>
-              <UserButton afterSignOutUrl="/" />
+              {/* FIXED: Removed deprecated afterSignOutUrl prop */}
+              <UserButton />
             </div>
           )}
         </div>
